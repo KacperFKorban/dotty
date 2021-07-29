@@ -123,5 +123,11 @@ class ScaladocSettings extends SettingGroup with AllScalaSettings:
   val scastieConfiguration: Setting[String] =
     StringSetting("-scastie-configuration", "Scastie configuration", "Additional configuration passed to Scastie in code snippets", "")
 
+  val noDoc: Setting[Boolean] =
+    BooleanSetting("-Yno-doc", "Don't generate docs", false)
+
+  val takeTastyFromClasspath: Setting[Boolean] =
+    BooleanSetting("-Ydoc-classpath", "Add classpath to documented sources", false)
+
   def scaladocSpecificSettings: Set[Setting[_]] =
     Set(sourceLinks, syntax, revision, externalDocumentationMappings, socialLinks, skipById, skipByRegex, deprecatedSkipPackages, docRootContent, snippetCompiler, generateInkuire, scastieConfiguration)

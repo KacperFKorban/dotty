@@ -72,14 +72,14 @@ trait ClassLikeSupport:
 
     def getSupertypesGraph(classDef: Tree, link: LinkToType): Seq[(LinkToType, LinkToType)] =
       val smbl = classDef.symbol
-      val parents = unpackTreeToClassDef(classDef).parents
+      val parents = if summon[DocContext].args.noDoc then Seq.empty else unpackTreeToClassDef(classDef).parents
       parents.flatMap { case tree =>
         val symbol = if tree.symbol.isClassConstructor then tree.symbol.owner else tree.symbol
         val superLink = LinkToType(tree.asSignature, symbol.dri, bareClasslikeKind(symbol))
         Seq(link -> superLink) ++ getSupertypesGraph(tree, superLink)
       }
 
-    val supertypes = getSupertypes(using qctx)(classDef).map {
+    val supertypes = if summon[DocContext].args.noDoc then Seq.empty else getSupertypes(using qctx)(classDef).map {
       case (symbol, tpe) =>
         LinkToType(tpe.asSignature, symbol.dri, bareClasslikeKind(symbol))
     }
@@ -88,9 +88,9 @@ trait ClassLikeSupport:
       val tpe = valdef.tpt.tpe
       LinkToType(tpe.asSignature, symbol.dri, Kind.Type(false, false, Seq.empty))
     }
-    val selfSignature: DSignature = typeForClass(classDef).asSignature
+    val selfSignature: DSignature = if summon[DocContext].args.noDoc then Seq.empty else typeForClass(classDef).asSignature
 
-    val graph = HierarchyGraph.withEdges(
+    val graph = if summon[DocContext].args.noDoc then HierarchyGraph.empty else HierarchyGraph.withEdges(
       getSupertypesGraph(classDef, LinkToType(selfSignature, classDef.symbol.dri, bareClasslikeKind(classDef.symbol)))
     )
 
@@ -123,8 +123,8 @@ trait ClassLikeSupport:
   private def isDocumentableExtension(s: Symbol) =
     !s.isHiddenByVisibility && !s.isSyntheticFunc && s.isExtensionMethod
 
-  private def parseMember(c: ClassDef)(s: Tree): Option[Member] = processTreeOpt(s) { s match
-      case dd: DefDef if isDocumentableExtension(dd.symbol) =>
+  private def parseMember(c: ClassDef)(s: Tree): Option[Member] = processTreeOpt(s)(s match
+      case dd: DefDef if isDocumentableExtension(dd.symbol) && !summon[DocContext].args.noDoc =>
         dd.symbol.extendedSymbol.map { extSym =>
           val memberInfo = unwrapMemberInfo(c, dd.symbol)
           val typeParams = dd.symbol.extendedTypeParams.map(mkTypeArgument(_, memberInfo.genericTypes))
@@ -145,7 +145,7 @@ trait ClassLikeSupport:
           parseMethod(c, dd.symbol,specificKind = Kind.Extension(target, _))
         }
       // TODO check given methods?
-      case dd: DefDef if !dd.symbol.isHiddenByVisibility && dd.symbol.isGiven && !dd.symbol.isArtifact =>
+      case dd: DefDef if !dd.symbol.isHiddenByVisibility && dd.symbol.isGiven && !dd.symbol.isArtifact && !summon[DocContext].args.noDoc =>
         Some(dd.symbol.owner.typeMember(dd.name))
           .filterNot(_.exists)
           .map { _ =>
@@ -154,7 +154,7 @@ trait ClassLikeSupport:
             )
           }
 
-      case dd: DefDef if !dd.symbol.isHiddenByVisibility && dd.symbol.isExported && !dd.symbol.isArtifact =>
+      case dd: DefDef if !dd.symbol.isHiddenByVisibility && dd.symbol.isExported && !dd.symbol.isArtifact && !summon[DocContext].args.noDoc =>
         val exportedTarget = dd.rhs.collect {
           case a: Apply => a.fun.asInstanceOf[Select]
           case s: Select => s
@@ -171,8 +171,9 @@ trait ClassLikeSupport:
         Some(parseMethod(c, dd.symbol, specificKind = Kind.Exported(_))
           .withOrigin(Origin.ExportedFrom(s"$instanceName.$functionName", dri)))
 
-      case dd: DefDef if !dd.symbol.isHiddenByVisibility && !dd.symbol.isGiven && !dd.symbol.isSyntheticFunc && !dd.symbol.isExtensionMethod && !dd.symbol.isArtifact =>
-        Some(parseMethod(c, dd.symbol))
+      case dd: DefDef if !dd.symbol.isHiddenByVisibility && !dd.symbol.isGiven && !dd.symbol.isSyntheticFunc
+        && !dd.symbol.isExtensionMethod && !dd.symbol.isArtifact && !summon[DocContext].args.noDoc =>
+          Some(parseMethod(c, dd.symbol))
 
       case td: TypeDef if !td.symbol.flags.is(Flags.Synthetic) && (!td.symbol.flags.is(Flags.Case) || !td.symbol.flags.is(Flags.Enum)) =>
         Some(parseTypeDef(td))
@@ -193,7 +194,7 @@ trait ClassLikeSupport:
         Some(parseClasslike(c))
 
       case _ => None
-  }
+  )
 
   private def parseGivenClasslike(c: ClassDef): Member = {
     val parsedClasslike = parseClasslike(c)

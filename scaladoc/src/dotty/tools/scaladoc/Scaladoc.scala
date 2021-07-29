@@ -4,16 +4,19 @@ import java.util.ServiceLoader
 import java.io.File
 import java.io.FileWriter
 import java.util.jar._
+import java.io.{ FileOutputStream, InputStream, FileInputStream }
+import java.util.zip.ZipInputStream
 import collection.JavaConverters._
 import collection.immutable.ArraySeq
-
-import java.nio.file.{ Files, Paths }
+import scala.util.Random
+import java.nio.file.{ Files, Paths, Path }
 
 import dotty.tools.dotc.config.Settings._
 import dotty.tools.dotc.config.{ CommonScalaSettings, AllScalaSettings }
 import dotty.tools.dotc.reporting.Reporter
 import dotty.tools.dotc.core.Contexts._
 
+import dotty.tools.scaladoc.tasty.ScaladocTastyInspector
 import dotty.tools.scaladoc.Inkuire
 import dotty.tools.scaladoc.Inkuire._
 
@@ -59,7 +62,8 @@ object Scaladoc:
     versionsDictionaryUrl: Option[String] = None,
     generateInkuire : Boolean = false,
     apiSubdirectory : Boolean = false,
-    scastieConfiguration: String = ""
+    scastieConfiguration: String = "",
+    noDoc: Boolean = false
   )
 
   def run(args: Array[String], rootContext: CompilerContext): Reporter =
@@ -90,20 +94,27 @@ object Scaladoc:
     ctx.reporter
 
   def dumpInkuireDB(output: String, parsedArgs: Args) = {
+    if parsedArgs.noDoc then
+      Paths.get(output).toFile().mkdir()
+    else
+      val configPath = Paths.get(output, "scripts", "inkuire-config.json")
+      val configFile = configPath.toFile()
+      configFile.createNewFile()
+      val configWriter = new FileWriter(configFile, false)
+      configWriter.write(Inkuire.generateInkuireConfig(parsedArgs.externalMappings.map(_.documentationUrl.toString)))
+      configWriter.close()
+
     val dbPath = Paths.get(output, "inkuire-db.json")
     val dbFile = dbPath.toFile()
     dbFile.createNewFile()
     val dbWriter = new FileWriter(dbFile, false)
     Inkuire.beforeSave()
+    println(s"Types: ${Inkuire.db.types.size}")
+    println(s"Functions: ${Inkuire.db.functions.size}")
+    println(s"Implicit conversions: ${Inkuire.db.implicitConversions.size}")
+    println(s"Type aliases: ${Inkuire.db.typeAliases.size}")
     dbWriter.write(s"${EngineModelSerializers.serialize(Inkuire.db)}")
     dbWriter.close()
-
-    val configPath = Paths.get(output, "scripts/inkuire-config.json")
-    val configFile = configPath.toFile()
-    configFile.createNewFile()
-    val configWriter = new FileWriter(configFile, false)
-    configWriter.write(Inkuire.generateInkuireConfig(parsedArgs.externalMappings.map(_.documentationUrl.toString)))
-    configWriter.close()
   }
 
   def extract(args: Array[String], rootCtx: CompilerContext): (Option[Scaladoc.Args], CompilerContext) =
@@ -196,9 +207,36 @@ object Scaladoc:
 
       if deprecatedSkipPackages.get.nonEmpty then report.warning(deprecatedSkipPackages.description)
 
+      def unzip(zipFile: InputStream, destination: Path): Unit = {
+        val zis = new ZipInputStream(zipFile)
+
+        LazyList.continually(zis.getNextEntry).takeWhile(_ != null).foreach { file =>
+          if (!file.isDirectory) {
+            val outPath = destination.resolve(file.getName)
+            val outPathParent = outPath.getParent
+            if (!outPathParent.toFile.exists()) {
+              outPathParent.toFile.mkdirs()
+            }
+
+            val outFile = outPath.toFile
+            val out = new FileOutputStream(outFile)
+            val buffer = new Array[Byte](4096)
+            LazyList.continually(zis.read(buffer)).takeWhile(_ != -1).foreach(out.write(buffer, 0, _))
+          }
+        }
+      }
+
+      val additionalDirs: Seq[File] = if takeTastyFromClasspath.get then {
+        val tempDir: File = Files.createTempDirectory("inkuire").toFile
+        classpath.get.split(File.pathSeparatorChar).map(str => File(str)).filter(_.exists()).foreach { file =>
+          unzip(FileInputStream(file), tempDir.toPath)
+        }
+        Seq(tempDir)
+      } else Seq.empty
+
       val docArgs = Args(
         projectName.withDefault("root"),
-        dirs,
+        dirs ++ additionalDirs,
         validFiles,
         classpath.get,
         bootclasspath.get,
@@ -225,15 +263,19 @@ object Scaladoc:
         versionsDictionaryUrl.nonDefault,
         generateInkuire.get,
         apiSubdirectory.get,
-        scastieConfiguration.get
+        scastieConfiguration.get,
+        noDoc.get,
       )
       (Some(docArgs), newContext)
     }
 
   private [scaladoc] def run(args: Args)(using ctx: CompilerContext): DocContext =
     given docContext: DocContext = new DocContext(args, ctx)
-    val module = ScalaModuleProvider.mkModule()
+    if docContext.args.noDoc then
+      ScaladocTastyInspector().result()
+    else
+      val module = ScalaModuleProvider.mkModule()
 
-    new dotty.tools.scaladoc.renderers.HtmlRenderer(module.rootPackage, module.members).render()
+      dotty.tools.scaladoc.renderers.HtmlRenderer(module.rootPackage, module.members).render()
     report.inform("generation completed successfully")
     docContext
