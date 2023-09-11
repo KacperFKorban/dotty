@@ -140,7 +140,10 @@ class HtmlRenderer(rootPackage: Member, members: Map[DRI, Member])(using ctx: Do
       nav.children.filterNot(_.hidden) match
         case Nil => isSelected -> div(cls := s"ni n$nestLevel ${if isSelected then "expanded" else ""}")(linkHtml())
         case children =>
-          val nested = children.map(renderNested(_, nestLevel + 1, newPrefix))
+          val nested = children.filter(page => page.content match
+            case m: Member => m.kind == Kind.Package
+            case _ => false
+          ).map(renderNested(_, nestLevel + 1, newPrefix))
           val expanded = nested.exists(_._1)
           val attr =
             if expanded || isSelected then Seq(cls := s"ni n$nestLevel expanded") else Seq(cls := s"ni n$nestLevel")
@@ -211,7 +214,7 @@ class HtmlRenderer(rootPackage: Member, members: Map[DRI, Member])(using ctx: Do
         )).dropRight(1)
       div(cls := "breadcrumbs container")(innerTags:_*)
 
-    val (apiNavOpt, docsNavOpt): (Option[(Boolean, Seq[AppliedTag])], Option[(Boolean, Seq[AppliedTag])]) = buildNavigation(link)
+    val (apiNavOpt, docsNavOpt): (Option[(Boolean, Seq[AppliedTag])], Option[(Boolean, Seq[AppliedTag])]) = None -> None // buildNavigation(link)
 
     def textFooter: String =
       args.projectFooter.getOrElse("")
@@ -272,11 +275,11 @@ class HtmlRenderer(rootPackage: Member, members: Map[DRI, Member])(using ctx: Do
               case _ => Nil
             }
           ),
-          apiNavOpt
-            .filter(_._1)
-            .map(apiNav => nav(id := "api-nav", cls := s"side-menu")(apiNav._2))
-            .orElse(docsNavOpt.map(docsNav => nav(id := "docs-nav", cls := s"side-menu")(docsNav._2)))
-            .get
+          // apiNavOpt
+          //   .filter(_._1)
+          //   .map(apiNav => nav(id := "api-nav", cls := s"side-menu")(apiNav._2))
+          //   .orElse(docsNavOpt.map(docsNav => nav(id := "docs-nav", cls := s"side-menu")(docsNav._2)))
+          //   .get
         )
       ),
       div(id := "footer", cls := "body-small")(
