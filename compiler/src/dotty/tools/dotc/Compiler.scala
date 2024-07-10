@@ -9,7 +9,7 @@ import Phases.Phase
 import transform.*
 import dotty.tools.backend
 import backend.jvm.{CollectSuperCalls, GenBCode}
-import localopt.StringInterpolatorOpt
+import localopt.{StringInterpolatorOpt, DropForMap}
 
 /** The central class of the dotc compiler. The job of a compiler is to create
  *  runs, which process given `phases` in a given `rootContext`.
@@ -91,7 +91,8 @@ class Compiler {
          new ExplicitOuter,          // Add accessors to outer classes from nested ones.
          new ExplicitSelf,           // Make references to non-trivial self types explicit as casts
          new StringInterpolatorOpt,  // Optimizes raw and s and f string interpolators by rewriting them to string concatenations or formats
-         new DropBreaks) ::          // Optimize local Break throws by rewriting them
+         new DropBreaks,             // Optimize local Break throws by rewriting them
+         new DropForMap) ::          // Drop unused trailing map calls in for comprehensions
     List(new PruneErasedDefs,        // Drop erased definitions from scopes and simplify erased expressions
          new UninitializedDefs,      // Replaces `compiletime.uninitialized` by `_`
          new InlinePatterns,         // Remove placeholders of inlined patterns

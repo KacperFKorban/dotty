@@ -52,6 +52,11 @@ object desugar {
    */
   val ContextBoundParam: Property.Key[Unit] = Property.StickyKey()
 
+  /** An attachment key to indicate that an Apply is created as a last `map`
+   *  scall in a for-comprehension.
+   */
+  val TrailingForMap: Property.Key[Unit] = Property.StickyKey()
+
   /** What static check should be applied to a Match? */
   enum MatchCheck {
     case None, Exhaustive, IrrefutablePatDef, IrrefutableGenFrom
@@ -1872,9 +1877,9 @@ object desugar {
      *    (Where empty for-comprehensions are excluded by the parser)
      *
      *   If the aliases are not followed by a guard, otherwise an error.
-     * 
+     *
      * With betterFors disabled, the translation is as follows:
-     * 
+     *
      * 1.
      *
      *    for (P <- G) E   ==>   G.foreach (P => E)
@@ -2044,14 +2049,22 @@ object desugar {
             if gen.checkMode != GenCheckMode.Filtered // results of withFilter have the wrong type
               && deepEquals(gen.pat, body)
             then gen.expr  // avoid a redundant map with identity
-            else Apply(rhsSelect(gen, mapName), makeLambda(gen, body))
+            else
+              val aply = Apply(rhsSelect(gen, mapName), makeLambda(gen, body))
+              aply.putAttachment(TrailingForMap, ())
+              aply
           case (gen: GenFrom) :: rest
           if rest.dropWhile(_.isInstanceOf[GenAlias]).headOption.forall(e => e.isInstanceOf[GenFrom]) =>
             val cont = makeFor(mapName, flatMapName, rest, body)
             val selectName =
               if rest.exists(_.isInstanceOf[GenFrom]) then flatMapName
               else mapName
-            Apply(rhsSelect(gen, selectName), makeLambda(gen, cont))
+            val aply = Apply(rhsSelect(gen, selectName), makeLambda(gen, cont))
+            if selectName == mapName then
+              aply.pushAttachment(TrailingForMap, ())
+            else
+              aply
+            aply
           case (gen: GenFrom) :: (rest @ GenAlias(_, _) :: _) =>
             val (valeqs, rest1) = rest.span(_.isInstanceOf[GenAlias])
             val pats = valeqs map { case GenAlias(pat, _) => pat }
