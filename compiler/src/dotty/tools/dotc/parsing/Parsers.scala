@@ -3359,7 +3359,7 @@ object Parsers {
      *                  |  override
      *                  |  opaque
      *  LocalModifier  ::= abstract | final | sealed | open | implicit | lazy | erased |
-     *                     inline | transparent | infix
+     *                     inline | transparent | infix | unique
      */
     def modifiers(allowed: BitSet = modifierTokens, start: Modifiers = Modifiers()): Modifiers = {
       @tailrec

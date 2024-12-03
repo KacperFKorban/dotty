@@ -39,6 +39,7 @@ object Feature:
   val betterMatchTypeExtractors = experimental("betterMatchTypeExtractors")
   val quotedPatternsWithPolymorphicFunctions = experimental("quotedPatternsWithPolymorphicFunctions")
   val betterFors = experimental("betterFors")
+  val uniqueness = experimental("uniqueness")
 
   def experimentalAutoEnableFeatures(using Context): List[TermName] =
     defn.languageExperimentalFeatures
@@ -69,7 +70,8 @@ object Feature:
     (namedTuples, "Allow named tuples"),
     (modularity, "Enable experimental modularity features"),
     (betterMatchTypeExtractors, "Enable better match type extractors"),
-    (betterFors, "Enable improvements in `for` comprehensions")
+    (betterFors, "Enable improvements in `for` comprehensions"),
+    (uniqueness, "Ebable type class uniqueness")
   )
 
   // legacy language features from Scala 2 that are no longer supported.

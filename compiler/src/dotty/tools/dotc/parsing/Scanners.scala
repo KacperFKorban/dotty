@@ -25,6 +25,8 @@ import reporting.{NoProfile, Profile, Message}
 import java.util.Objects
 import dotty.tools.dotc.reporting.Message.rewriteNotice
 import dotty.tools.dotc.config.Feature.sourceVersion
+import dotty.tools.dotc.util.Stats.enabled
+import dotty.tools.dotc.config.Feature.uniqueness
 
 object Scanners {
 
@@ -1195,7 +1197,7 @@ object Scanners {
 
     def isSoftModifier: Boolean =
       token == IDENTIFIER
-      && (softModifierNames.contains(name) || name == nme.erased && erasedEnabled)
+      && (softModifierNames.contains(name) || name == nme.erased && erasedEnabled || name == nme.unique && featureEnabled(uniqueness))
 
     def isSoftModifierInModifierPosition: Boolean =
       isSoftModifier && inModifierPosition()
