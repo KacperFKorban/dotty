@@ -19,7 +19,7 @@ object NamerOps:
   def effectiveResultType(ctor: Symbol, paramss: List[List[Symbol]])(using Context): Type =
     paramss match
       case TypeSymbols(tparams) :: rest =>
-        addParamRefinements(ctor.owner.typeRef.appliedTo(tparams.map(_.typeRef)), rest)
+        addParamRefinements(ctor.owner.typeRef.appliedTo(tparams.map(_.typeRef)), paramss)
       case _ =>
         addParamRefinements(ctor.owner.typeRef, paramss)
 
@@ -31,7 +31,11 @@ object NamerOps:
    */
   def addParamRefinements(resType: Type, paramss: List[List[Symbol]])(using Context): Type =
     paramss.flatten.foldLeft(resType): (rt, param) =>
-      if param.is(Tracked) then RefinedType(rt, param.name, param.termRef)
+      if param.is(Tracked) then
+        if param.isTerm then RefinedType(rt, param.name, param.termRef)
+        else
+          val alias = TypeAlias(param.typeRef)
+          RefinedType(rt, param.name, alias)
       else rt
 
   /** Split dependent class refinements off parent type. Add them to `refinements`,

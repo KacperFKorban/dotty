@@ -452,7 +452,7 @@ object Flags {
     commonFlags(Private, Protected, Final, Case, Implicit, Given, Override, JavaStatic, Transparent, Erased)
 
   val TypeSourceModifierFlags: FlagSet =
-    CommonSourceModifierFlags.toTypeFlags | Abstract | Sealed | Opaque | Open
+    CommonSourceModifierFlags.toTypeFlags | Abstract | Sealed | Opaque | Open | Tracked
 
   val TermSourceModifierFlags: FlagSet =
     CommonSourceModifierFlags.toTermFlags | Inline | AbsOverride | Lazy | Tracked

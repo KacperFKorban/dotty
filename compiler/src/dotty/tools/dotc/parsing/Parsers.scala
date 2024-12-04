@@ -3450,7 +3450,7 @@ object Parsers {
 
 
     /** ClsTypeParamClause::=  ‘[’ ClsTypeParam {‘,’ ClsTypeParam} ‘]’
-     *  ClsTypeParam      ::=  {Annotation} [‘+’ | ‘-’]
+     *  ClsTypeParam      ::=  {Annotation} {'type'} [‘+’ | ‘-’]
      *                         id [HkTypeParamClause] TypeAndCtxBounds
      *
      *  DefTypeParamClause::=  ‘[’ DefTypeParam {‘,’ DefTypeParam} ‘]’
@@ -3478,6 +3478,10 @@ object Parsers {
         var mods = annotsAsMods() | Param
         if paramOwner.isClass then
           mods |= PrivateLocal
+        if in.token == Tokens.TYPE && paramOwner.isClass && in.featureEnabled(Feature.modularity) then
+          mods &~= PrivateLocal
+          mods |= Tracked
+          in.skipToken()
         if isIdent(nme.raw.PLUS) && checkVarianceOK() then
           mods |= Covariant
         else if isIdent(nme.raw.MINUS) && checkVarianceOK() then

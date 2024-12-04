@@ -613,7 +613,7 @@ object desugar {
   /** Map type parameter accessor to corresponding method (i.e. constructor) parameter */
   private def toMethParam(tparam: TypeDef, keep: KeepAnnotations)(using Context): TypeDef =
     val mods = filterAnnots(tparam.rawMods, keep)
-    tparam.withMods(mods & EmptyFlags | Param)
+    tparam.withMods(mods & (EmptyFlags | Tracked) | Param)
 
   /** Map term parameter accessor to corresponding method (i.e. constructor) parameter */
   private def toMethParam(vparam: ValDef, keep: KeepAnnotations, keepDefault: Boolean)(using Context): ValDef = {
@@ -1081,7 +1081,7 @@ object desugar {
       if mods.isAllOf(Given | Inline | Transparent) then
         report.error("inline given instances cannot be trasparent", cdef)
       var classMods = if mods.is(Given) then mods &~ (Inline | Transparent) | Synthetic else mods
-      if vparamAccessors.exists(_.mods.is(Tracked)) then
+      if vparamAccessors.exists(_.mods.is(Tracked)) || tparamAccessors.exists(_.mods.is(Tracked)) then
         classMods |= Dependent
       cpy.TypeDef(cdef: TypeDef)(
         name = className,
