@@ -1,6 +1,6 @@
 import scala.language.experimental.modularity
 
-unique trait Show:
+@unique trait Show:
   type Self
   type Out
   def show(s: Self): Out
@@ -28,3 +28,7 @@ def f[A](p: Pair[A, A]) =
 //   val _: p.AIsT.X = p.b
 //   val _: p.BIsT.X = p.b
 //   val _: p.BIsT.X = p.a
+
+
+// For now restrict the unique type class checking to defdefs
+// - for defdefs lookup the unique type class instances in the enclosing class and the arguments (maybe nested as members of the arguments)

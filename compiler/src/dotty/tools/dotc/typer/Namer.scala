@@ -61,6 +61,7 @@ class Namer { typer: Typer =>
   val ParentRefinements: Property.Key[List[Symbol]]        = new Property.Key
   val SymOfTree        : Property.Key[Symbol]              = new Property.Key
   val AttachedDeriver  : Property.Key[Deriver]             = new Property.Key
+  val HasUnique        : Property.Key[List[Symbol]]        = new Property.Key
     // was `val Deriver`, but that gave shadowing problems with constructor proxies
 
   /** A partial map from unexpanded member and pattern defs and to their expansions.
@@ -1719,6 +1720,11 @@ class Namer { typer: Typer =>
       denot.info = tempInfo.nn.finalized(parentTypes)
       tempInfo = null // The temporary info can now be garbage-collected
 
+      // val uniqueMemberSymbols: List[Symbol] =
+      //   cls.info.allMembers.map(_.symbol).filter(_.isTerm).filter(_.hasAnnotation(defn.UniqueAnnot)).toList
+      // val uniqueMemberTrees: List[Tree] = uniqueMemberSymbols.map(s => TypeTree(s.termRef))
+      // val hasUniqueAnnotation = Annotation(cls = defn.HasUniqueAnnot, args = uniqueMemberTrees, span = cls.span)
+
       Checking.checkWellFormed(cls)
       if (isDerivedValueClass(cls)) cls.setFlag(Final)
       cls.info = avoidPrivateLeaks(cls)
@@ -1727,6 +1733,7 @@ class Namer { typer: Typer =>
       cls.setNoInitsFlags(parentsKind(parents), untpd.bodyKind(rest))
       cls.setStableConstructor()
       enterParentRefinementSyms(parentRefinements.toList)
+      // cls.addAnnotation(hasUniqueAnnotation)
       processExports(using localCtx)
       defn.patchStdLibClass(cls)
       addConstructorProxies(cls)
