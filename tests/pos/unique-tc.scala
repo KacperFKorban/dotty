@@ -1,11 +1,12 @@
 import scala.language.experimental.modularity
 
-@unique trait Show:
+@annotation.unique trait Show:
   type Self
+  type X
   type Out
   def show(s: Self): Out
 
-def twoShowAs[A](a: A)(using w1: Show[A], w2: Show[A]) =
+def twoShowAs[A](a: A)(using w1: A is Show, w2: A is Show) =
   summon[w1.Out =:= w2.Out]
 
 // Possible desugaring:
@@ -17,10 +18,10 @@ class Pair[A, B](using val ShowA: A is Show, val ShowB: B is Show)(val a: ShowA.
 // Possibly annotate any class that contains a unique type class instance with @HasUnique(ShowA.type, ShowB.type) // or maybe the widened version
 
 def f[A](p: Pair[A, A]) =
-  val _: p.AIsT.X = p.a
-  val _: p.AIsT.X = p.b
-  val _: p.BIsT.X = p.b
-  val _: p.BIsT.X = p.a
+  val _: p.ShowA.X = p.a
+  val _: p.ShowA.X = p.b
+  val _: p.ShowB.X = p.b
+  val _: p.ShowB.X = p.a
 
 // Possible desugaring:
 // def f[A](p: Pair[A, A] { val ShowA: ShowB.type } ) =
@@ -28,7 +29,6 @@ def f[A](p: Pair[A, A]) =
 //   val _: p.AIsT.X = p.b
 //   val _: p.BIsT.X = p.b
 //   val _: p.BIsT.X = p.a
-
 
 // For now restrict the unique type class checking to defdefs
 // - for defdefs lookup the unique type class instances in the enclosing class and the arguments (maybe nested as members of the arguments)

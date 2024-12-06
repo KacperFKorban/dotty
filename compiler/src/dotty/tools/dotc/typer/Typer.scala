@@ -3204,11 +3204,11 @@ class Typer(@constructorOnly nestingLevel: Int = 0) extends Namer
       // check value class constraints
       checkDerivedValueClass(cls, body1)
 
-      val uniqueMemberSymbols: List[Symbol] =
-        cls.info.allMembers.map(_.symbol).filter(_.isTerm).filter(_.hasAnnotation(defn.UniqueAnnot)).toList
-      val uniqueMemberTrees: List[Tree] = uniqueMemberSymbols.map(s => TypeTree(s.termRef))
+      // val uniqueMemberSymbols: List[Symbol] =
+      //   cls.info.allMembers.map(_.symbol).filter(_.isTerm).filter(_.hasAnnotation(defn.UniqueAnnot)).toList
+      // val uniqueMemberTrees: List[Tree] = uniqueMemberSymbols.map(s => TypeTree(s.termRef))
 
-      cdef1.symbol.addAnnotation(Annotation(defn.HasUniqueAnnot, uniqueMemberTrees, cdef1.span))
+      // cdef1.symbol.addAnnotation(Annotation(defn.HasUniqueAnnot, uniqueMemberTrees, cdef1.span))
 
       val effectiveOwner = cls.owner.skipWeakOwner
       if cls.is(ModuleClass)

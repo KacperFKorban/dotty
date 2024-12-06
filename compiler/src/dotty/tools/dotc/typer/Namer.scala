@@ -61,7 +61,6 @@ class Namer { typer: Typer =>
   val ParentRefinements: Property.Key[List[Symbol]]        = new Property.Key
   val SymOfTree        : Property.Key[Symbol]              = new Property.Key
   val AttachedDeriver  : Property.Key[Deriver]             = new Property.Key
-  val HasUnique        : Property.Key[List[Symbol]]        = new Property.Key
     // was `val Deriver`, but that gave shadowing problems with constructor proxies
 
   /** A partial map from unexpanded member and pattern defs and to their expansions.
@@ -1695,6 +1694,23 @@ class Namer { typer: Typer =>
         if cls.isRealClass then recur(parents) else parents
       end addUsingTraits
 
+      def addUniqueRefinements(cls: ClassSymbol): Unit =
+        val uniqueMembersInScope = ctx.scope.toList.filter(_.hasAnnotation(defn.UniqueAnnot))
+        println(ctx.scope.toList)
+        val uniqueDecls = cls.info.decls.toList.filter(_.hasAnnotation(defn.UniqueAnnot))
+        val uniqueMembers = uniqueMembersInScope ++ uniqueDecls
+        println(uniqueMembers)
+        val declDefDefs = cls.info.decls.toList.filter(_.is(Method))
+
+      // if any of the decls in the class has a @unique annot, add a HasUniqueAnnot to the class
+      def addHasUniqueAnnot(cls: ClassSymbol): Unit =
+        val uniqueMembers = cls.info.decls.toList.filter(_.hasAnnotation(defn.UniqueAnnot))
+        if uniqueMembers.nonEmpty then
+          val uniqueMemberTrees: List[Tree] = uniqueMembers.map(s => TypeTree(s.termRef))
+          // TODO(kπ): Why you not work? :(
+          // val hasUniqueAnnotation = Annotation(cls = defn.HasUniqueAnnot, args = uniqueMemberTrees, span = cls.span)
+          cls.addAnnotation(defn.HasUniqueAnnot)
+
       completeConstructor(denot)
       denot.info = tempInfo.nn
 
@@ -1720,11 +1736,6 @@ class Namer { typer: Typer =>
       denot.info = tempInfo.nn.finalized(parentTypes)
       tempInfo = null // The temporary info can now be garbage-collected
 
-      // val uniqueMemberSymbols: List[Symbol] =
-      //   cls.info.allMembers.map(_.symbol).filter(_.isTerm).filter(_.hasAnnotation(defn.UniqueAnnot)).toList
-      // val uniqueMemberTrees: List[Tree] = uniqueMemberSymbols.map(s => TypeTree(s.termRef))
-      // val hasUniqueAnnotation = Annotation(cls = defn.HasUniqueAnnot, args = uniqueMemberTrees, span = cls.span)
-
       Checking.checkWellFormed(cls)
       if (isDerivedValueClass(cls)) cls.setFlag(Final)
       cls.info = avoidPrivateLeaks(cls)
@@ -1733,7 +1744,8 @@ class Namer { typer: Typer =>
       cls.setNoInitsFlags(parentsKind(parents), untpd.bodyKind(rest))
       cls.setStableConstructor()
       enterParentRefinementSyms(parentRefinements.toList)
-      // cls.addAnnotation(hasUniqueAnnotation)
+      // addUniqueRefinements(cls)
+      // addHasUniqueAnnot(cls)
       processExports(using localCtx)
       defn.patchStdLibClass(cls)
       addConstructorProxies(cls)
@@ -1920,6 +1932,50 @@ class Namer { typer: Typer =>
       completer.setCompletedTypeParams(completedTypeParams.asInstanceOf[List[TypeSymbol]])
     completeTrailingParamss(ddef, sym, indexingCtor = false)
     val paramSymss = normalizeIfConstructor(ddef.paramss.nestedMap(symbolOfTree), isConstructor)
+
+    def addUniqueRefinements(): Unit =
+      enum UniqueMemberRef:
+        case ParamRef(val param: Symbol)
+        case ParamMemberRef(val param: Symbol, member: Symbol)
+        def info: Type = this match
+          case ParamRef(param) => param.info
+          case ParamMemberRef(param, member) =>
+            param.info.select(member).widenDealias
+        def termRef: Type = this match
+          case ParamRef(param) => param.termRef
+          case ParamMemberRef(param, member) => param.termRef.select(member)
+        val param: Symbol
+        def withRefinement(newRef: Type): Type = this match
+          case ParamRef(param) => newRef
+          case ParamMemberRef(param, member) =>
+            RefinedType(param.info, member.name, newRef)
+
+      import UniqueMemberRef.*
+      // TODO(kπ) modify the parameters here?
+      // val uniqueMembersInScope = ctx.scope.toList.filter(_.hasAnnotation(defn.UniqueAnnot))
+      val uniqueParamsAndParamMembers = paramSymss.flatten.flatMap { p =>
+        val uniqueDecls = p.info.dealias.decls.toList
+          .filter(_.info.dealias.typeSymbol.hasAnnotation(defn.UniqueAnnot))
+          .map(s => ParamMemberRef(p, s))
+        if p.info.dealias.typeSymbol.hasAnnotation(defn.UniqueAnnot) then
+          ParamRef(p) +: uniqueDecls
+        else
+          uniqueDecls
+      }
+      val tpeToSymbolMap = uniqueParamsAndParamMembers.map(s => s.info -> s).groupMap(_._1)(_._2)
+      // for every tpe in the list, replace the types of all but the first symbol with the termRef of the first symbol
+      tpeToSymbolMap.values.flatten.foreach{ s =>
+        tpeToSymbolMap.get(s.info) match
+          case Some(hd :: rest) if s.termRef != hd.termRef =>
+            val newTpe = s.withRefinement(hd.termRef)
+            println(i"replacing ${s.param}: ${s.info} with $newTpe")
+            // TODO(kπ) this is probably wrong, we should find a better place to fit this in
+            s.param.info = newTpe
+            s
+          case _ => s
+      }
+
+    addUniqueRefinements()
     sym.setParamss(paramSymss)
 
     def wrapMethType(restpe: Type): Type =
