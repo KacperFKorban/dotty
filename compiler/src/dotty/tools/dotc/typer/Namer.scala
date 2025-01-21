@@ -1694,12 +1694,13 @@ class Namer { typer: Typer =>
         if cls.isRealClass then recur(parents) else parents
       end addUsingTraits
 
+      // TODO(kπ) add unique refinements to class members here
       def addUniqueRefinements(cls: ClassSymbol): Unit =
         val uniqueMembersInScope = ctx.scope.toList.filter(_.hasAnnotation(defn.UniqueAnnot))
-        println(ctx.scope.toList)
+        // println(ctx.scope.toList)
         val uniqueDecls = cls.info.decls.toList.filter(_.hasAnnotation(defn.UniqueAnnot))
         val uniqueMembers = uniqueMembersInScope ++ uniqueDecls
-        println(uniqueMembers)
+        // println(uniqueMembers)
         val declDefDefs = cls.info.decls.toList.filter(_.is(Method))
 
       // if any of the decls in the class has a @unique annot, add a HasUniqueAnnot to the class
@@ -1707,8 +1708,6 @@ class Namer { typer: Typer =>
         val uniqueMembers = cls.info.decls.toList.filter(_.hasAnnotation(defn.UniqueAnnot))
         if uniqueMembers.nonEmpty then
           val uniqueMemberTrees: List[Tree] = uniqueMembers.map(s => TypeTree(s.termRef))
-          // TODO(kπ): Why you not work? :(
-          // val hasUniqueAnnotation = Annotation(cls = defn.HasUniqueAnnot, args = uniqueMemberTrees, span = cls.span)
           cls.addAnnotation(defn.HasUniqueAnnot)
 
       completeConstructor(denot)
@@ -1744,8 +1743,8 @@ class Namer { typer: Typer =>
       cls.setNoInitsFlags(parentsKind(parents), untpd.bodyKind(rest))
       cls.setStableConstructor()
       enterParentRefinementSyms(parentRefinements.toList)
-      // addUniqueRefinements(cls)
-      // addHasUniqueAnnot(cls)
+      if Feature.enabled(modularity) then addUniqueRefinements(cls)
+      if Feature.enabled(modularity) then addHasUniqueAnnot(cls)
       processExports(using localCtx)
       defn.patchStdLibClass(cls)
       addConstructorProxies(cls)
@@ -1896,6 +1895,71 @@ class Namer { typer: Typer =>
     else mbrTpe
   }
 
+  // TODO(kπ) add a unique refinement to defdef params here
+  def addUniqueRefinements(ddef: ValOrDefDef, paramSymss: List[List[Symbol]])(using Context): Unit =
+    /** Representation of a unique member reference */
+    enum UniqueMemberRef:
+      case ParamRef(val param: Symbol)
+      case ParamMemberRef(val param: Symbol, member: Symbol)
+      case OuterRef(val param: Symbol)
+      def info: Type = this match
+        case ParamRef(param) => param.info
+        case ParamMemberRef(param, member) =>
+          param.info.select(member).widenDealias
+        case OuterRef(param) => param.info
+      def termRef: Type = this match
+        case ParamRef(param) => param.termRef
+        case ParamMemberRef(param, member) => param.termRef.select(member)
+        case OuterRef(param) => param.termRef
+      val param: Symbol
+      def withRefinement(newRef: Type): Type = this match
+        case ParamRef(param) => newRef
+        case ParamMemberRef(param, member) =>
+          RefinedType(param.info, member.name, newRef)
+        case OuterRef(param) => ErrorType(em"OuterRef should not be refined")
+
+    import UniqueMemberRef.*
+    // TODO(kπ) scope doesn't see symbols from outer scopes e.g. class members from the perspactive of a method
+    // val ownerSyms = if !sym.isConstructor then sym.owner.info.decls.toList else List.empty // TODO(kπ) this causes cyclic reference errors
+    val scopeSyms = ctx.scope.toList
+    val uniqueMembersInScope = (scopeSyms /* ++ ownerSyms */).filter(_.hasAnnotation(defn.UniqueAnnot))
+      .filterNot(paramSymss.flatten.contains)
+      .map(OuterRef.apply)
+    println(ctx.scope.filter(_.hasAnnotation(defn.UniqueAnnot)))
+    val uniqueParamsAndParamMembers = paramSymss.flatten.flatMap { p =>
+      val uniqueMembers = p.info.dealias.decls.toList
+        .filter(_.info.dealias.typeSymbol.hasAnnotation(defn.UniqueAnnot))
+        .map(s => ParamMemberRef(p, s))
+      if p.info.dealias.typeSymbol.hasAnnotation(defn.UniqueAnnot) then
+        ParamRef(p) +: uniqueMembers
+      else
+        uniqueMembers
+    }
+    // TODO(kπ) How to unify the types? with =:=?
+    // What to do for subtyping i.e. if we have (tca: TC[A]) <: (tcb: TC[B]) which one do we keep?
+    // TODO(kπ) fix the following code:
+    // val tpeToSymbolMap = (uniqueMembersInScope ++ uniqueParamsAndParamMembers).map(s => s.info -> s).foldLeft(Map.empty[Type, List[(Type, UniqueMemberRef)]]) { case (acc, (tpe, ref)) =>
+    //   acc.find(_._1 <:< tpe) match
+    //     case Some(tlower, v) => acc.updated(tpe, v :+ (tpe, ref)).removed(tlower)
+    //     case None =>
+    //       acc.find(tpe <:< _._1) match
+    //         case Some(tupper, v) => acc.updated(tupper, v :+ (tpe, ref))
+    //         case None => acc.updated(tpe, List((tpe, ref)))
+    // }.view.mapValues(_.map(_._2)).toMap
+    val tpeToSymbolMap = (uniqueMembersInScope ++ uniqueParamsAndParamMembers).map(s => s.info -> s).groupMap(_._1)(_._2)
+    println(i"tpeToSymbolMap(${ddef.name}): $tpeToSymbolMap")
+    // for every tpe in the list, replace the types of all but the first symbol with the termRef of the first symbol
+    tpeToSymbolMap.values.flatten.foreach { s =>
+      tpeToSymbolMap.get(s.info) match
+        case Some(hd :: rest) if s.termRef != hd.termRef =>
+          val newTpe = s.withRefinement(hd.termRef)
+          println(i"replacing ${s.param}: ${s.info} with $newTpe")
+          // TODO(kπ) this is probably wrong, we should find a better place to fit this in
+          s.param.info = newTpe
+          s
+        case _ => s
+    }
+
   /** The type signature of a DefDef with given symbol */
   def defDefSig(ddef: DefDef, sym: Symbol, completer: Namer#Completer)(using Context): Type =
     // Beware: ddef.name need not match sym.name if sym was freshened!
@@ -1933,49 +1997,7 @@ class Namer { typer: Typer =>
     completeTrailingParamss(ddef, sym, indexingCtor = false)
     val paramSymss = normalizeIfConstructor(ddef.paramss.nestedMap(symbolOfTree), isConstructor)
 
-    def addUniqueRefinements(): Unit =
-      enum UniqueMemberRef:
-        case ParamRef(val param: Symbol)
-        case ParamMemberRef(val param: Symbol, member: Symbol)
-        def info: Type = this match
-          case ParamRef(param) => param.info
-          case ParamMemberRef(param, member) =>
-            param.info.select(member).widenDealias
-        def termRef: Type = this match
-          case ParamRef(param) => param.termRef
-          case ParamMemberRef(param, member) => param.termRef.select(member)
-        val param: Symbol
-        def withRefinement(newRef: Type): Type = this match
-          case ParamRef(param) => newRef
-          case ParamMemberRef(param, member) =>
-            RefinedType(param.info, member.name, newRef)
-
-      import UniqueMemberRef.*
-      // TODO(kπ) modify the parameters here?
-      // val uniqueMembersInScope = ctx.scope.toList.filter(_.hasAnnotation(defn.UniqueAnnot))
-      val uniqueParamsAndParamMembers = paramSymss.flatten.flatMap { p =>
-        val uniqueDecls = p.info.dealias.decls.toList
-          .filter(_.info.dealias.typeSymbol.hasAnnotation(defn.UniqueAnnot))
-          .map(s => ParamMemberRef(p, s))
-        if p.info.dealias.typeSymbol.hasAnnotation(defn.UniqueAnnot) then
-          ParamRef(p) +: uniqueDecls
-        else
-          uniqueDecls
-      }
-      val tpeToSymbolMap = uniqueParamsAndParamMembers.map(s => s.info -> s).groupMap(_._1)(_._2)
-      // for every tpe in the list, replace the types of all but the first symbol with the termRef of the first symbol
-      tpeToSymbolMap.values.flatten.foreach{ s =>
-        tpeToSymbolMap.get(s.info) match
-          case Some(hd :: rest) if s.termRef != hd.termRef =>
-            val newTpe = s.withRefinement(hd.termRef)
-            println(i"replacing ${s.param}: ${s.info} with $newTpe")
-            // TODO(kπ) this is probably wrong, we should find a better place to fit this in
-            s.param.info = newTpe
-            s
-          case _ => s
-      }
-
-    addUniqueRefinements()
+    if Feature.enabled(modularity) then addUniqueRefinements(ddef, paramSymss)
     sym.setParamss(paramSymss)
 
     def wrapMethType(restpe: Type): Type =
