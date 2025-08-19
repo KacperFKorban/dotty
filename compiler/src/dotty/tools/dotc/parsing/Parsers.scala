@@ -3434,7 +3434,7 @@ object Parsers {
     }
 
     def annotsAsMods(skipNewLines: Boolean = false): Modifiers =
-      Modifiers() withAnnotations annotations(skipNewLines)
+      Modifiers().withAnnotations(annotations(skipNewLines))
 
     def defAnnotsMods(allowed: BitSet): Modifiers =
       modifiers(allowed, annotsAsMods(skipNewLines = true))
@@ -4064,7 +4064,7 @@ object Parsers {
         argumentExprss(mkApply(Ident(nme.CONSTRUCTOR), argumentExprs()))
       }
 
-    /** TypeDef    ::=  id [HkTypeParamClause] {FunParamClause} TypeAndCtxBounds [‘=’ TypeDefRHS ]
+    /** TypeDef    ::=  id [HkTypeParamClause] {FunParamClause} TypeAndCtxBounds [‘derives’ QualId {‘,’ QualId}] [‘=’ TypeDefRHS ]
      *               |  id `^` TypeAndCtxBounds [‘=’ TypeDefRHS ] -- under captureChecking
      *  TypeDefRHS ::= Type
      *               | CaptureSet -- under captureChecking
@@ -4084,7 +4084,7 @@ object Parsers {
         val tparams = typeParamClauseOpt(ParamOwner.Hk)
         val vparamss = funParamClauses()
 
-        def makeTypeDef(rhs: Tree): Tree = {
+        def makeTypeDef(rhs: Tree, derived: List[Tree] = List.empty): Tree = {
           val rhs1 = lambdaAbstractAll(tparams :: vparamss, rhs)
           val tdef = TypeDef(nameIdent.name.toTypeName, rhs1)
           if nameIdent.isBackquoted then
@@ -4093,13 +4093,21 @@ object Parsers {
             tdef.pushAttachment(CaptureVar, ())
             // putting the attachment here as well makes post-processing in the typer easier
             rhs.pushAttachment(CaptureVar, ())
+          if derived.nonEmpty then
+            tdef.pushAttachment(DerivesTrees, derived)
           finalizeDef(tdef, mods, start)
         }
+
+        val derived =
+          if (isIdent(nme.derives) && mods.is(Opaque)) then
+            in.nextToken()
+            commaSeparated(() => convertToTypeId(qualId()))
+          else Nil
 
         in.token match {
           case EQUALS =>
             in.nextToken()
-            makeTypeDef(typeDefRHS())
+            makeTypeDef(typeDefRHS(), derived)
           case SUBTYPE | SUPERTYPE =>
             typeAndCtxBounds(tname) match
               case bounds: TypeBoundsTree if in.token == EQUALS =>
@@ -4119,7 +4127,7 @@ object Parsers {
                     else
                       syntaxError(em"cannot combine bound and alias", eqOffset)
                 }
-                makeTypeDef(rhs)
+                makeTypeDef(rhs, derived)
               case bounds => makeTypeDef(bounds)
           case SEMI | NEWLINE | NEWLINES | COMMA | RBRACE | OUTDENT | EOF =>
             makeTypeDef(typeAndCtxBounds(tname))

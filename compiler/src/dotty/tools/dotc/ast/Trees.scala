@@ -37,6 +37,9 @@ object Trees {
   /** Property key for marking capture-set variables and members */
   val CaptureVar: Property.StickyKey[Unit] = Property.StickyKey()
 
+  /** Property key for attaching contents of derives clauses of opaque types */
+  val DerivesTrees: Property.StickyKey[List[Tree[Untyped]]] = Property.StickyKey()
+
   /** Trees take a parameter indicating what the type of their `tpe` field
    *  is. Two choices: `Type` or `Untyped`.
    *  Untyped trees have type `Tree[Untyped]`.
